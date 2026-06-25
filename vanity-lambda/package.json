@@ -1,0 +1,14 @@
+{
+  "name": "vanity-number-lambda",
+  "version": "1.0.0",
+  "description": "Amazon Connect Lambda | converts caller phone numbers to vanity numbers",
+  "type": "module",
+  "main": "src/index.mjs",
+  "scripts": {
+    "test": "node tests/test.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/lib-dynamodb": "^3.0.0"
+  }
+}

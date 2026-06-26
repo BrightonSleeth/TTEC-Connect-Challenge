@@ -17,6 +17,8 @@
 // eslint-disable-next-line no-undef
 const TABLE_NAME = process.env.TABLE_NAME;
 
+import { generateVanities } from "./vanity-generator.mjs";
+
 export const handler = async (event) => {
   console.log("Received event:", JSON.stringify(event, null, 2));
 
@@ -26,7 +28,7 @@ export const handler = async (event) => {
     return errorResponse("Table is null.");
   }
 
-  //get raw number from event
+  //get raw number from event - fatal fail
   let rawNumber;
   try {
     rawNumber = event?.Details?.ContactData?.CustomerEndpoint?.Address;
@@ -39,26 +41,22 @@ export const handler = async (event) => {
   }
   console.log("Processing number:", rawNumber);
 
-  //try parse phone number
   let parsed;
   try {
-    //parse number here
-    parsed = {
-      countryCode: "1",
-      areaCode: rawNumber.slice(0, 3),
-      localNumber: rawNumber.slice(3)
-    };
-  } catch (err) {
-    console.error("Phone parse error:", err.message);
-    return errorResponse("Phone number format not recognized.");
+    //generate vanities for the local number (7 digits)
+    parsed = await generateVanities(rawNumber);
+    //sort by score and return top 5
+    parsed = Array.from(parsed).sort((a, b) => b.score - a.score).slice(0, 5);
+  }
+  catch (err) {
+    console.error("Vanity generation error:", err.message);
+    return errorResponse("Vanity generation failed.");
   }
 
   //create test example response
   const response = {
     status: "success",
-    vanity1: parsed.countryCode,
-    vanity2: parsed.areaCode,
-    vanity3: parsed.localNumber,
+    vanityResults: parsed,
   };
   //log results
   console.log("Returning to Connect:", JSON.stringify(response));
@@ -71,9 +69,7 @@ function errorResponse(reason) {
   console.error("Returning error response:", reason);
   return {
     status: "error",
-    vanity1: "",
-    vanity2: "",
-    vanity3: "",
+    vanityResults: [],
     errorReason: reason,
   };
 }

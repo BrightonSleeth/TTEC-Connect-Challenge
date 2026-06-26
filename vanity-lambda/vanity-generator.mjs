@@ -1,21 +1,21 @@
 /**
  * Generates vanity numbers from a raw input number and returns scored candidates.
  *
- * Strategy: instead of expanding every keypad letter combination (exponential and
+ * Instead of expanding every keypad letter combination (exponential and
  * mostly junk), we walk the dictionary and try to place each word at every position
  * in the 7-digit local number. A position outside a matched word stays a digit, so
- * the output is always a real word embedded in the number (e.g. "356WERS" -> never,
- * "FLOWERS" -> yes).
+ * the output is always a real word embedded in the number .
+ * (e.g. "356WERS" is not allowed, but "FLOWERS" is).
  *
  * A word letter matches a digit when either:
- *   - the keypad maps that digit to the letter (true conversion), or
- *   - the digit is a visual look-alike for the letter (letter substitute), in which
- *     case the digit is kept in place (e.g. "BURG3RS"). Substitutes score slightly
- *     lower than a fully converted word ("BURGERS").
+ *   - the keypad maps that digit to the letter, or
+ *   - the digit is a visual look-alike for the letter, in which
+ *     case the digit is kept in place (e.g. "BURG3RS"). 
+ *     Substitutes score slightly lower than a fully converted word ("BURGERS").
  *
- * Scoring (highest first):
- *   1. length of the largest word formed
- *   2. how many digits were converted into letters (substitutes count, but a little less)
+ * Scoring:
+ *   1. length of the largest word formed - longer words score higher
+ *   2. how many digits were converted into letters and not substituted - more letters converted score higher
  */
 import { WORD_SET } from "./words.mjs";
 
@@ -69,7 +69,6 @@ export function generateVanities(rawNumber) {
     vanityNum: local,
     formatted: formatFull(number, local),
     word: null,
-    lettersConverted: 0,
     score: 0,
   });
 
@@ -88,7 +87,6 @@ export function generateVanities(rawNumber) {
           vanityNum,
           formatted: formatFull(number, vanityNum),
           word,
-          lettersConverted: r.coverage,
           //scores by word length first, then coverage second.
           //this favors a longer word with fewer substitutes over a shorter word with more substitutes.
           score: wlen * WORD_WEIGHT + r.coverage,
@@ -101,17 +99,8 @@ export function generateVanities(rawNumber) {
   return Array.from(best.values()).sort((a, b) => b.score - a.score).slice(0, GENERATE_AMOUNT);
 }
 
-/**
- * Produces every valid way to render `word` over the equal-length digit string.
- *
- * Each position can be a true keypad conversion (display the letter) and/or a visual
- * substitute (display the digit). The cartesian product of per-position options yields
- * all renderings. If any position can be neither, the word cannot sit here.
- *
- * @param {string} word - uppercase word, same length as `digits`
- * @param {string} digits
- * @returns {{display: string, coverage: number}[]}
- */
+
+//attempts to map a word to an equal length digit window in the local number, returning all valid renders.
 function renderWordAt(word, digits) {
   const perPosition = [];
 
@@ -121,18 +110,17 @@ function renderWordAt(word, digits) {
     const options = [];
 
     if (KEYPAD[digit] && KEYPAD[digit].includes(letter)) {
-      options.push({ ch: letter, value: LETTER_VALUE }); // converted to a letter
+      options.push({ ch: letter, value: LETTER_VALUE }); //converted to a letter
     }
     if (SUBSTITUTE[digit] && SUBSTITUTE[digit].includes(letter)) {
-      options.push({ ch: digit, value: SUBSTITUTE_VALUE }); // kept as a look-alike
+      options.push({ ch: digit, value: SUBSTITUTE_VALUE }); //kept as a look-alike
     }
 
-    if (options.length === 0) return []; // word can't be placed at this offset
+    if (options.length === 0) return []; //word can't be placed at this offset
     perPosition.push(options);
   }
 
-  // Cartesian product over positions. Word length <= 7 and <= 2 options each, so this
-  // stays tiny in practice (real dual-render cases like 3<->E are rare).
+  //build words from the per-position options, keeping track of how many letters were converted.
   let renderings = [{ display: "", coverage: 0 }];
   for (const options of perPosition) {
     const next = [];
@@ -154,6 +142,7 @@ function formatFull(number, localRendering) {
   return `${number.countryCode}-${number.areaCode}-${localRendering}`;
 }
 
+//parses a raw phone number into its components, validating it as a 10-digit NANP number. 
 function parsePhoneNumber(raw) {
   if (typeof raw !== "string") {
     throw new Error("Phone number must be a string.");
@@ -162,7 +151,7 @@ function parsePhoneNumber(raw) {
   //strip all non-digit characters except leading +
   const cleaned = raw.replace(/[^\d+]/g, "");
 
-  //validate E.164 format for NANP
+  //validate format for NANP
   const match = cleaned.match(/^\+?1?(\d{3})(\d{3})(\d{4})$/);
 
   if (!match) {

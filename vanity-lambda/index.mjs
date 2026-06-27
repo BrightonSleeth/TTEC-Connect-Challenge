@@ -2,15 +2,6 @@
  *env variables:
  *   TABLE_NAME - DynamoDB table name
  *
- *expected item shape:
- *  {
- *    CallerId:      "+19015551234",
- *    CreatedAt:     "2024-01-15T10:30:00Z",
- *    VanityResults: ["1-800-FLOWERS", ...],
- *    TopScores:     [100, 87, 75, 60, 45],
- *    TopWords:      [["flowers"], ["flow"]],
- *    LocalNumber:   "5551234"
- *  }
  * 
  * This is the main Lambda handler for the vanity number generator. It is designed to be invoked by an AWS Connect contact flow.
  * Talks to DynamoDB to check for existing results, and if none exist, generates new vanities and stores them. 
@@ -18,7 +9,7 @@
  */
 
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { generateVanities } from "./vanity-generator.mjs";
 
 //get table name
@@ -66,6 +57,21 @@ export const handler = async (event) => {
 
     if (existing.Item) {
       console.log(`Existing record found for ${rawNumber} — returning stored results.`);
+
+      //refresh the timestamp of this call log
+      try {
+        await docClient.send(
+          new UpdateCommand({
+            TableName: TABLE_NAME,
+            Key: { CallerId: rawNumber },
+            UpdateExpression: "SET LastCalled = :now",
+            ExpressionAttributeValues: { ":now": new Date().toISOString() },
+          })
+        );
+      } catch (err) {
+        console.error("Timestamp refresh failed:", err.message);
+      }
+
       const stored = existing.Item.VanityResults ?? [];
       const top3 = stored.slice(0, 3);
       while (top3.length < 3) top3.push("");
@@ -81,40 +87,50 @@ export const handler = async (event) => {
     console.error("GetItem failed — proceeding with generation:", err.message);
   }
 
-  //generate vanities for the local number (7 digits) - fatal fail
-  let parsed;
+  //save current timestamp for logging the call
+  const calledAt = new Date().toISOString();
+
+  //generate vanities for the local number (7 digits).
+  //generation is non-fatal here: we still log that the caller called and when.
+  let parsed = [];
+  let generationFailed = false;
   try {
     parsed = await generateVanities(rawNumber);
   }
   catch (err) {
     console.error("Vanity generation error:", err.message);
-    return errorResponse("Vanity generation failed.");
+    generationFailed = true;
   }
 
-    //construct a new db item with new values
-    const item = {
-      CallerId: rawNumber,
-      CreatedAt: new Date().toISOString(),
-      VanityResults: parsed
-    };
-  
-    //attempt to write to db - non fatal fail
-    try {
-      await docClient.send(
-        new PutCommand({
-          TableName: TABLE_NAME,
-          Item: item,
-          ConditionExpression: "attribute_not_exists(CallerId)",
-        })
-      );
-      console.log("DynamoDB write successful.");
-    } catch (err) {
-      if (err.name === "ConditionalCheckFailedException") {
-        console.warn("Concurrent write for same CallerId. Ignoring.");
-      } else {
-        console.error("DynamoDB write failed:", err.message, err.name);
-      }
+  //construct a new db item
+  const item = {
+    CallerId: rawNumber,
+    LastCalled: calledAt,
+    VanityResults: parsed,
+  };
+
+  //attempt to write to db - non fatal fail
+  try {
+    await docClient.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: item,
+        ConditionExpression: "attribute_not_exists(CallerId)",
+      })
+    );
+    console.log("DynamoDB write successful.");
+  } catch (err) {
+    if (err.name === "ConditionalCheckFailedException") {
+      console.warn("Concurrent write for same CallerId. Ignoring.");
+    } else {
+      console.error("DynamoDB write failed:", err.message, err.name);
     }
+  }
+
+  //the call is logged above; now surface a generation failure to Connect.
+  if (generationFailed) {
+    return errorResponse("Vanity generation failed.");
+  }
 
   //create response
   const response = {

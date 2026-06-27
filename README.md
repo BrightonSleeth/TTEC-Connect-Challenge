@@ -27,9 +27,8 @@
 
 ### If I had more time
 - I would switch from hardcoded one-time auth to Cognito for stronger security features and multiple accounts for dashboard login.
-- I would add an option to generate a new set of vanity numbers.
-- add number substitutes (example 3 instead of e) as slightly lower value matches to dictionary
+- I would add an option to select one of the generated numbers and set it as "preferred."
+- add number substitutes (example 3 instead of e) as slightly lower value matches to dictionary.
 
-### Misc
-- Chose serverless architecture for much lower costs.
-- 
+### Biggest blockers
+- Service limit increase requests took 4 days to get a response on both CloudFront and Connect.

@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vanity Number Dashboard</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+    :root {
+      --bg:         #0b0f1a;
+      --surface:    #111827;
+      --border:     #1e2d40;
+      --green:      #00e5a0;
+      --green-dim:  rgba(0, 229, 160, 0.12);
+      --text:       #e2e8f0;
+      --text-muted: #64748b;
+      --red:        #f87171;
+      --mono:       'IBM Plex Mono', monospace;
+      --sans:       'IBM Plex Sans', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .logo { display: flex; align-items: center; gap: 12px; }
+
+    .logo-icon {
+      width: 36px; height: 36px;
+      border: 1.5px solid var(--green);
+      border-radius: 8px;
+      display: grid; place-items: center;
+      font-family: var(--mono);
+      font-size: 14px;
+      color: var(--green);
+      letter-spacing: -1px;
+    }
+
+    h1 {
+      font-family: var(--sans);
+      font-weight: 300;
+      font-size: 16px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    h1 strong { color: var(--text); font-weight: 600; }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      transition: background 0.3s;
+    }
+
+    .status-dot.ok    { background: var(--green); }
+    .status-dot.error { background: var(--red); }
+    .status-dot.loading {
+      background: var(--green);
+      animation: pulse 1s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.25; }
+    }
+
+    .countdown-wrap {
+      position: relative;
+      width: 28px; height: 28px;
+      flex-shrink: 0;
+    }
+
+    .countdown-wrap svg {
+      transform: rotate(-90deg);
+      width: 28px; height: 28px;
+    }
+
+    .countdown-track {
+      fill: none;
+      stroke: var(--border);
+      stroke-width: 2.5;
+    }
+
+    .countdown-arc {
+      fill: none;
+      stroke: var(--green);
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 1s linear;
+    }
+
+    .countdown-num {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--text-muted);
+      line-height: 1;
+    }
+
+    main {
+      flex: 1;
+      padding: 32px;
+      max-width: 960px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    #caller-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .caller-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+      transition: border-color 0.3s;
+    }
+
+    .caller-card.new {
+      border-color: var(--green);
+      animation: card-in 0.35s ease forwards;
+    }
+
+    @keyframes card-in {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .caller-meta {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .caller-id {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    .caller-time {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .vanity-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .vanity-pill {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      padding: 5px 12px;
+      border-radius: 5px;
+      border: 1px solid transparent;
+    }
+
+    .vanity-pill.rank-1 {
+      background: var(--green-dim);
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    .vanity-pill.rank-2 {
+      background: rgba(148,163,184,0.08);
+      border-color: rgba(148,163,184,0.3);
+      color: #94a3b8;
+    }
+
+    .vanity-pill.rank-other {
+      background: rgba(71,85,105,0.08);
+      border-color: rgba(71,85,105,0.3);
+      color: #475569;
+    }
+
+    .score-badge {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-left: 4px;
+    }
+
+    .state-msg {
+      text-align: center;
+      padding: 80px 24px;
+      color: var(--text-muted);
+    }
+
+    .state-msg svg { opacity: 0.2; margin-bottom: 16px; }
+    .state-msg p { font-family: var(--mono); font-size: 13px; }
+    .state-msg p + p { margin-top: 6px; color: var(--red); font-size: 11px; }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 16px 32px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    @media (max-width: 600px) {
+      header, main, footer { padding: 16px; }
+      .header-right { gap: 10px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .caller-card.new, .status-dot.loading { animation: none; }
+      .countdown-arc { transition: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">#→A</div>
+    <h1><strong>Vanity</strong> Dashboard</h1>
+  </div>
+  <div class="header-right">
+    <div class="status">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Loading…</span>
+    </div>
+    <div class="countdown-wrap" title="Next refresh">
+      <svg viewBox="0 0 28 28">
+        <circle class="countdown-track" cx="14" cy="14" r="11"/>
+        <circle class="countdown-arc"   cx="14" cy="14" r="11"
+                id="countdown-arc"
+                stroke-dasharray="69.1"
+                stroke-dashoffset="0"/>
+      </svg>
+      <div class="countdown-num" id="countdown-num">30</div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="section-label">Last 5 callers</div>
+  <div id="caller-list"></div>
+</main>
+
+<footer>
+  <span>Amazon Connect · Vanity Number Converter</span>
+  <span id="last-updated">—</span>
+</footer>
+
+<script>
+  const API_URL     = "https://rqqckds7xj.execute-api.us-east-1.amazonaws.com/callers";
+  const POLL_EVERY  = 30;
+
+  // Track previous caller IDs to detect new arrivals between polls
+  let prevCallerIds = new Set();
+  let countdown     = POLL_EVERY;
+  let countdownTimer = null;
+
+  const list        = document.getElementById("caller-list");
+  const dot         = document.getElementById("status-dot");
+  const statusText  = document.getElementById("status-text");
+  const lastUpdated = document.getElementById("last-updated");
+  const arc         = document.getElementById("countdown-arc");
+  const countNum    = document.getElementById("countdown-num");
+
+  // SVG circle circumference
+  const CIRCUMFERENCE = 69.1;
+
+  // Polling
+  async function fetchCallers() {
+    setStatus("loading", "Refreshing…");
+    try {
+      const res  = await fetch(API_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      render(data.callers ?? []);
+      setStatus("ok", "Live");
+      lastUpdated.textContent = "Updated " + new Date().toLocaleTimeString();
+    } catch (err) {
+      console.error("Poll failed:", err);
+      setStatus("error", "Fetch failed — retrying");
+    }
+    resetCountdown();
+  }
+
+  function resetCountdown() {
+    clearInterval(countdownTimer);
+    countdown = POLL_EVERY;
+    tickCountdown();
+    countdownTimer = setInterval(() => {
+      countdown--;
+      if (countdown <= 0) {
+        clearInterval(countdownTimer);
+        fetchCallers();
+      } else {
+        tickCountdown();
+      }
+    }, 1000);
+  }
+
+  function tickCountdown() {
+    const fraction = countdown / POLL_EVERY;
+    arc.style.strokeDashoffset = CIRCUMFERENCE * (1 - fraction);
+    countNum.textContent = countdown;
+  }
+
+  // Rendering
+  function render(callers) {
+    list.innerHTML = "";
+
+    if (callers.length === 0) {
+      list.innerHTML = `
+        <div class="state-msg">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="1.5">
+            <path d="M22 16.92v3a2 2 0 01-2.18 2
+                     19.79 19.79 0 01-8.63-3.07
+                     A19.5 19.5 0 013.07 9.81
+                     19.79 19.79 0 01.01 1.18
+                     A2 2 0 012 0h3a2 2 0 012 1.72
+                     c.127.96.361 1.903.7 2.81
+                     a2 2 0 01-.45 2.11L6.09 7.91
+                     a16 16 0 006 6l1.27-1.27
+                     a2 2 0 012.11-.45
+                     c.907.339 1.85.573 2.81.7
+                     A2 2 0 0122 14.92z"/>
+          </svg>
+          <p>No calls yet. Refreshes every ${POLL_EVERY}s.</p>
+        </div>`;
+      prevCallerIds = new Set();
+      return;
+    }
+
+    const newIds = new Set(callers.map((c) => c.callerId));
+
+    callers.forEach((caller) => {
+      const isNew = !prevCallerIds.has(caller.callerId);
+      list.appendChild(buildCard(caller, isNew));
+    });
+
+    setTimeout(() => {
+      document.querySelectorAll(".caller-card.new")
+        .forEach((el) => el.classList.remove("new"));
+    }, 1500);
+
+    prevCallerIds = newIds;
+  }
+
+  function buildCard(caller, isNew) {
+    const card = document.createElement("div");
+    card.className = "caller-card" + (isNew ? " new" : "");
+
+    const ts = caller.timestamp
+      ? new Date(caller.timestamp).toLocaleString(undefined, {
+          month: "short", day: "numeric",
+          hour: "2-digit", minute: "2-digit", second: "2-digit",
+        })
+      : "—";
+
+    const pills = (caller.vanityResults ?? []).map((v, i) => {
+      const rankClass = i === 0 ? "rank-1" : i === 1 ? "rank-2" : "rank-other";
+      const score = caller.topScores?.[i] != null
+        ? `<span class="score-badge">${caller.topScores[i]}</span>` : "";
+      return `<span class="vanity-pill ${rankClass}">${escHtml(v)}${score}</span>`;
+    }).join("");
+
+    card.innerHTML = `
+      <div class="caller-meta">
+        <span class="caller-id">${escHtml(maskCallerId(caller.callerId))}</span>
+        <span class="caller-time">${escHtml(ts)}</span>
+      </div>
+      <div class="vanity-list">${pills}</div>
+    `;
+    return card;
+  }
+
+  function setStatus(cls, text) {
+    dot.className = "status-dot" + (cls ? " " + cls : "");
+    statusText.textContent = text;
+  }
+
+  function maskCallerId(id) {
+    const clean = id.replace(/\D/g, "");
+    if (clean.length >= 10)
+      return `+${clean.slice(0, clean.length - 7)}•••${clean.slice(-4)}`;
+    return id;
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  fetchCallers();
+</script>
+
+</body>
+</html>

@@ -301,7 +301,7 @@
 </footer>
 
 <script>
-  const API_URL     = "https://rqqckds7xj.execute-api.us-east-1.amazonaws.com/callers";
+  const API_URL = "https://da4typxk42hr5.cloudfront.net/callers";
   const POLL_EVERY  = 30;
 
   // Track previous caller IDs to detect new arrivals between polls
@@ -419,7 +419,7 @@
 
     card.innerHTML = `
       <div class="caller-meta">
-        <span class="caller-id">${escHtml(maskCallerId(caller.callerId))}</span>
+        <span class="caller-id">${escHtml(caller.callerId)}</span>
         <span class="caller-time">${escHtml(ts)}</span>
       </div>
       <div class="vanity-list">${pills}</div>
@@ -430,13 +430,6 @@
   function setStatus(cls, text) {
     dot.className = "status-dot" + (cls ? " " + cls : "");
     statusText.textContent = text;
-  }
-
-  function maskCallerId(id) {
-    const clean = id.replace(/\D/g, "");
-    if (clean.length >= 10)
-      return `+${clean.slice(0, clean.length - 7)}•••${clean.slice(-4)}`;
-    return id;
   }
 
   function escHtml(str) {

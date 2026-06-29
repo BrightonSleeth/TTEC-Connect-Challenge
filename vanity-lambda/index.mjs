@@ -58,29 +58,46 @@ export const handler = async (event) => {
     if (existing.Item) {
       console.log(`Existing record found for ${rawNumber} — returning stored results.`);
 
-      //refresh the timestamp of this call log
-      try {
-        await docClient.send(
-          new UpdateCommand({
-            TableName: TABLE_NAME,
-            Key: { CallerId: rawNumber },
-            UpdateExpression: "SET LastCalled = :now",
-            ExpressionAttributeValues: { ":now": new Date().toISOString() },
-          })
-        );
-      } catch (err) {
-        console.error("Timestamp refresh failed:", err.message);
+      let stored = existing.Item.VanityResults ?? [];
+
+      //legacy records may have been stored before the tts field existed (or with no
+      //results at all). Regenerate so the speech block isn't empty, and heal the
+      //record so subsequent calls are served correctly from cache.
+      const needsBackfill =
+        stored.length === 0 ||
+        stored.some((v) => v && typeof v === "object" && !v.tts);
+
+      if (needsBackfill) {
+        console.log("Stored record is missing tts — regenerating and healing.");
+        try {
+          stored = await generateVanities(rawNumber);
+          await docClient.send(
+            new PutCommand({
+              TableName: TABLE_NAME,
+              Item: { CallerId: rawNumber, LastCalled: new Date().toISOString(), VanityResults: stored },
+            })
+          );
+        } catch (err) {
+          console.error("Failed to backfill cached record:", err.message);
+        }
+      } else {
+        //fresh enough — just refresh the timestamp of this call log.
+        try {
+          await docClient.send(
+            new UpdateCommand({
+              TableName: TABLE_NAME,
+              Key: { CallerId: rawNumber },
+              UpdateExpression: "SET LastCalled = :now",
+              ExpressionAttributeValues: { ":now": new Date().toISOString() },
+            })
+          );
+        } catch (err) {
+          console.error("Timestamp refresh failed:", err.message);
+        }
       }
 
-      const stored = existing.Item.VanityResults ?? [];
-      const top3 = stored.slice(0, 3);
-      while (top3.length < 3) top3.push("");
-      return {
-        status: "success",
-        vanity1: top3[0]?.formatted ?? "",
-        vanity2: top3[1]?.formatted ?? "",
-        vanity3: top3[2]?.formatted ?? "",
-      };
+      //record existed, so this is a repeat caller -> "welcome back" greeting.
+      return buildConnectResponse(stored, { returning: true });
     }
   } catch (err) {
     //get failed - log but continue to generate new results
@@ -132,17 +149,39 @@ export const handler = async (event) => {
     return errorResponse("Vanity generation failed.");
   }
 
-  //create response
-  const response = {
-    status: "success",
-    vanity1: parsed[0]?.formatted ?? "",
-    vanity2: parsed[1]?.formatted ?? "",
-    vanity3: parsed[2]?.formatted ?? "",
-  };
+  //no prior record -> first-time caller -> "your new vanity numbers" greeting.
+  const response = buildConnectResponse(parsed, { returning: false });
   //log results
   console.log("Returning to Connect:", JSON.stringify(response));
   return response;
 };
+
+//spoken greeting played before the vanity numbers. The contact flow can read it as
+//$.External.greeting, or branch on $.External.isReturning ("true" / "false").
+const GREETING_RETURNING = "Welcome back! Your vanity numbers are:";
+const GREETING_NEW = "Your new vanity numbers are:";
+
+//builds the Amazon Connect response from a list of vanity candidates: the top 3
+//formatted strings (for display) and their tts strings (for the speech block).
+//missing slots are padded with empty strings so the contact flow always has the keys.
+//`returning` selects the greeting: true for a repeat caller (served from cache),
+//false for a first-time caller.
+function buildConnectResponse(candidates, { returning = false } = {}) {
+  const top3 = (candidates ?? []).slice(0, 3);
+  while (top3.length < 3) top3.push({});
+  return {
+    status: "success",
+    //ready-to-speak greeting + a flag so the flow can branch instead, if preferred
+    greeting: returning ? GREETING_RETURNING : GREETING_NEW,
+    isReturning: returning ? "true" : "false",
+    vanity1: top3[0]?.formatted ?? "",
+    vanity2: top3[1]?.formatted ?? "",
+    vanity3: top3[2]?.formatted ?? "",
+    vanity1tts: top3[0]?.tts ?? "",
+    vanity2tts: top3[1]?.tts ?? "",
+    vanity3tts: top3[2]?.tts ?? "",
+  };
+}
 
 //helper for building an error response to return to Connect. 
 //the contact flow should check for status === "error" and branch accordingly.

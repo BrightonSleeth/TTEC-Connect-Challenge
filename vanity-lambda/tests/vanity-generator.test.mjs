@@ -95,6 +95,30 @@ test("falls back to the raw number when no word matches", () => {
   assert.equal(results[0].formatted, "1-800-1111111");
 });
 
+test("includes a TTS rendering that separates digits from words", () => {
+  const flowers = generateVanities(FLOWERS).find((c) => c.vanityNum === "FLOWERS");
+  assert.equal(flowers.tts, "one, eight zero zero, flowers");
+});
+
+test("TTS speaks substitute variants as the real word, not its digits", () => {
+  // FLOW3RS keeps a substitute digit, but should still be read aloud as "flowers".
+  const flow3rs = generateVanities(FLOWERS).find((c) => c.vanityNum === "FLOW3RS");
+  assert.ok(flow3rs, "expected FLOW3RS candidate");
+  assert.equal(flow3rs.tts, "one, eight zero zero, flowers");
+  assert.ok(!/three/.test(flow3rs.tts), "substitute digit should not be spoken");
+});
+
+test("TTS speaks surrounding digit runs one digit at a time", () => {
+  // 702-0836 -> R0B0T36: trailing 36 should be read as separate digits after the word.
+  const robot = generateVanities("+18007020836").find((c) => c.word === "robot");
+  assert.equal(robot.tts, "one, eight zero zero, robot, three six");
+});
+
+test("TTS for the raw fallback reads every digit", () => {
+  const fallback = generateVanities("+18001111111")[0];
+  assert.equal(fallback.tts, "one, eight zero zero, one one one one one one one");
+});
+
 test("candidate vanity numbers are unique (deduped)", () => {
   const results = generateVanities(FLOWERS);
   const seen = new Set(results.map((c) => c.vanityNum));

@@ -37,9 +37,14 @@ const KEYPAD = {
 const SUBSTITUTE = {
   "0": ["O"],
   "1": ["I"],
-  "3": ["E"],
-  "5": ["S"],
-  "7": ["T"],
+  "4": ["A"],
+  "5": ["S"]
+};
+
+//spoken form of each digit, used to build the TTS-friendly rendering.
+const DIGIT_WORDS = {
+  "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+  "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
 };
 
 //weights for scoring
@@ -69,6 +74,8 @@ export function generateVanities(rawNumber) {
     vanityNum: local,
     formatted: formatFull(number, local),
     word: null,
+    //no word matched, so the whole number is spoken digit by digit.
+    tts: buildTts(number, [{ type: "digits", value: local }]),
     score: 0,
   });
 
@@ -80,6 +87,16 @@ export function generateVanities(rawNumber) {
     for (let start = 0; start + wlen <= len; start++) {
       const digits = local.slice(start, start + wlen);
       const renderings = renderWordAt(upper, digits);
+      if (renderings.length === 0) continue;
+
+      //TTS reads the surrounding digits one by one and the matched word as a word.
+      //the word is spoken from the dictionary entry, so substitute variants
+      //(e.g. "FLOW3RS") still sound like the real word, not "flow three r s".
+      const tts = buildTts(number, [
+        { type: "digits", value: local.slice(0, start) },
+        { type: "word", value: word },
+        { type: "digits", value: local.slice(start + wlen) },
+      ]);
 
       for (const r of renderings) {
         const vanityNum = local.slice(0, start) + r.display + local.slice(start + wlen);
@@ -87,6 +104,7 @@ export function generateVanities(rawNumber) {
           vanityNum,
           formatted: formatFull(number, vanityNum),
           word,
+          tts,
           //scores by word length first, then coverage second.
           //this favors a longer word with fewer substitutes over a shorter word with more substitutes.
           score: wlen * WORD_WEIGHT + r.coverage,
@@ -140,6 +158,28 @@ function renderWordAt(word, digits) {
 //formats a vanity number for display
 function formatFull(number, localRendering) {
   return `${number.countryCode}-${number.areaCode}-${localRendering}`;
+}
+
+//speaks a run of digits one at a time: "800" -> "eight zero zero"
+function speakDigits(digits) {
+  return digits.split("").map((d) => DIGIT_WORDS[d] ?? d).join(" ");
+}
+
+//builds a TTS-friendly rendering of the full vanity number. The country and area
+//code are always prepended as digit runs; the caller supplies the local segments.
+//digit runs are spoken digit by digit and word segments are spoken as words, joined
+//by commas so a TTS engine pauses naturally and never reads digits as part of a word.
+//e.g. "1-800-FLOWERS" -> "one, eight zero zero, flowers"
+function buildTts(number, localSegments) {
+  const segments = [
+    { type: "digits", value: number.countryCode },
+    { type: "digits", value: number.areaCode },
+    ...localSegments,
+  ];
+  return segments
+    .filter((s) => s.value)
+    .map((s) => (s.type === "word" ? s.value.toLowerCase() : speakDigits(s.value)))
+    .join(", ");
 }
 
 //parses a raw phone number into its components, validating it as a 10-digit NANP number. 

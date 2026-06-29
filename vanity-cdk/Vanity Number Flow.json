@@ -1,0 +1,129 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "cdb8a759-fd08-4327-b1c6-ea32b1d2d20f",
+  "Metadata": {
+    "entryPointPosition": {
+      "x": -220.8,
+      "y": 42.4
+    },
+    "ActionMetadata": {
+      "7ac9f357-2cd4-4aef-993b-4e8a02450279": {
+        "position": {
+          "x": 816,
+          "y": -41.6
+        }
+      },
+      "cdb8a759-fd08-4327-b1c6-ea32b1d2d20f": {
+        "position": {
+          "x": -92.8,
+          "y": 41.6
+        }
+      },
+      "0123b8c3-fa1b-4355-b0fc-cb8994e919dc": {
+        "position": {
+          "x": 1100.8,
+          "y": 116.8
+        }
+      },
+      "vanity-generator": {
+        "position": {
+          "x": 144,
+          "y": 44.8
+        },
+        "isFriendlyName": true,
+        "parameters": {
+          "LambdaFunctionARN": {
+            "displayName": "VanityNumberConverter"
+          }
+        },
+        "dynamicMetadata": {}
+      },
+      "error": {
+        "position": {
+          "x": 816.8,
+          "y": 173.6
+        },
+        "isFriendlyName": true
+      }
+    },
+    "Annotations": [],
+    "name": "Vanity Number Flow",
+    "description": "",
+    "type": "contactFlow",
+    "status": "PUBLISHED",
+    "hash": {}
+  },
+  "Actions": [
+    {
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "SSML": "<speak>\n  $.External.greeting\n  <break time=\"600ms\"/>\n  Number one. <break time=\"300ms\"/> $.External.vanity1tts.\n  <break time=\"700ms\"/>\n  Number two. <break time=\"300ms\"/> $.External.vanity2tts.\n  <break time=\"700ms\"/>\n  Number three. <break time=\"300ms\"/> $.External.vanity3tts.\n</speak>"
+      },
+      "Identifier": "7ac9f357-2cd4-4aef-993b-4e8a02450279",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "0123b8c3-fa1b-4355-b0fc-cb8994e919dc",
+        "Errors": [
+          {
+            "NextAction": "0123b8c3-fa1b-4355-b0fc-cb8994e919dc",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "FlowLoggingBehavior": "Enabled"
+      },
+      "Identifier": "cdb8a759-fd08-4327-b1c6-ea32b1d2d20f",
+      "Type": "UpdateFlowLoggingBehavior",
+      "Transitions": {
+        "NextAction": "vanity-generator"
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "0123b8c3-fa1b-4355-b0fc-cb8994e919dc",
+      "Type": "DisconnectParticipant",
+      "Transitions": {}
+    },
+    {
+      "Parameters": {
+        "LambdaFunctionARN": "arn:aws:lambda:us-east-1:141960793304:function:VanityNumberConverter",
+        "InvocationTimeLimitSeconds": "3",
+        "InvocationType": "SYNCHRONOUS",
+        "ResponseValidation": {
+          "ResponseType": "STRING_MAP"
+        }
+      },
+      "Identifier": "vanity-generator",
+      "Type": "InvokeLambdaFunction",
+      "Transitions": {
+        "NextAction": "7ac9f357-2cd4-4aef-993b-4e8a02450279",
+        "Errors": [
+          {
+            "NextAction": "error",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "We were unable to generate vanities for your number. Please try again later."
+      },
+      "Identifier": "error",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "0123b8c3-fa1b-4355-b0fc-cb8994e919dc",
+        "Errors": [
+          {
+            "NextAction": "0123b8c3-fa1b-4355-b0fc-cb8994e919dc",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    }
+  ]
+}

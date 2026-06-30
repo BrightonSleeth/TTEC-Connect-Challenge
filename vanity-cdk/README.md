@@ -4,9 +4,9 @@ AWS CDK app for the Vanity Number Solution.
 
 | Resource | Source |
 | --- | --- |
-| `VanityNumberConverter` Lambda | [`../vanity-lambda`](../vanity-lambda) (`index.mjs` + `vanity-generator.mjs` + `words.mjs`) |
-| `VanityDashboardReader` Lambda | [`../vanity-dashboard-reader`](../vanity-dashboard-reader) (`index.mjs`) |
-| `SloganGenerator` Lambda | [`../vanity-slogan-generator`](../vanity-slogan-generator) (`index.mjs`) |
+| `VanityNumberConverter` Lambda | [`../vanity-lambda/src`](../vanity-lambda/src) (`index.mjs` + `vanity-generator.mjs` + `words.mjs`) |
+| `VanityDashboardReader` Lambda | [`../vanity-dashboard-reader/src`](../vanity-dashboard-reader/src) (`index.mjs`) |
+| `SloganGenerator` Lambda | [`../vanity-slogan-generator/src`](../vanity-slogan-generator/src) (`index.mjs`) |
 | Dashboard site | [`../vanity-dashboard/index.html`](../vanity-dashboard) |
 | Contact flow | [`Vanity Number Flow.json`](Vanity%20Number%20Flow.json) |
 
@@ -15,9 +15,9 @@ AWS CDK app for the Vanity Number Solution.
 - **DynamoDB** `VanityNumbers` table (`CallerId` partition key, pay-per-request, retained on destroy),
   plus a `LastCalledIndex` GSI (constant `GSIPartition="ALL"` + `LastCalled`) the dashboard queries.
 - **Three Lambdas** (Node 24): `VanityNumberConverter`, `VanityDashboardReader`, and `SloganGenerator`.
-  The source is plain ESM (`.mjs`) whose only runtime dependency is `@aws-sdk/*` — already provided by
-  the Node 24 runtime — so the files ship as-is via `Code.fromAsset` with no bundling step
-  (`node_modules`, `tests`, `*.zip`, and `package-lock.json` are excluded from the package).
+  The source is plain ESM (`.mjs`) under each project's `src/` folder, whose only runtime dependency
+  is `@aws-sdk/*` — already provided by the Node 24 runtime — so each `src/` ships as-is via
+  `Code.fromAsset` with no bundling step (deps come from the runtime; tests and configs stay out).
 - **Secrets Manager** secret `vanity-generator/anthropic-api-key` for the slogan Lambda's Anthropic
   API key. Created with a generated **placeholder** so `cdk deploy` is self-contained; the slogan
   Lambda is granted read on it only. **Replace the placeholder with a real key after deploy** (see below).

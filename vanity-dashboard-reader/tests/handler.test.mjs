@@ -17,7 +17,7 @@ const ddbMock = mockClient(DynamoDBDocumentClient);
 
 let handler;
 before(async () => {
-  ({ handler } = await import("../index.mjs"));
+  ({ handler } = await import("../src/index.mjs"));
 });
 
 beforeEach(() => {
@@ -36,7 +36,7 @@ test("OPTIONS preflight returns 204 with CORS headers", async () => {
 
 test("missing VANITY_TABLE returns 500", async () => {
   delete process.env.VANITY_TABLE;
-  const { handler: h } = await import("../index.mjs?case=no-table");
+  const { handler: h } = await import("../src/index.mjs?case=no-table");
   const res = await h({});
   assert.equal(res.statusCode, 500);
   assert.equal(body(res).error, "Table is null.");

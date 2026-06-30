@@ -22,7 +22,7 @@ const ddbMock = mockClient(DynamoDBDocumentClient);
 
 let handler;
 before(async () => {
-  ({ handler } = await import("../index.mjs"));
+  ({ handler } = await import("../src/index.mjs"));
 });
 
 beforeEach(() => {
@@ -40,7 +40,7 @@ function connectEvent(address) {
 
 test("missing TABLE_NAME returns an error response", async () => {
   delete process.env.TABLE_NAME;
-  const { handler: h } = await import("../index.mjs?case=no-table");
+  const { handler: h } = await import("../src/index.mjs?case=no-table");
   const res = await h(connectEvent("+18003569377"));
   assert.equal(res.status, "error");
   process.env.TABLE_NAME = "vanity-test";

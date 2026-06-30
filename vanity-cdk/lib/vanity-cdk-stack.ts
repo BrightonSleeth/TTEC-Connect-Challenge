@@ -24,10 +24,10 @@ const DASHBOARD_DIR = path.join(REPO_ROOT, "vanity-dashboard");
 // shaped as { "ANTHROPIC_API_KEY": "sk-ant-..." }.
 const API_KEY_SECRET_NAME = "vanity-generator/anthropic-api-key";
 
-// The Lambdas are plain ESM (.mjs) whose only runtime dependency is @aws-sdk/*,
-// which the Node 24 runtime already provides — so we ship the source as-is with
-// no bundling step. These are the files we DON'T want in the deployment package.
-const LAMBDA_ASSET_EXCLUDE = ["node_modules", "tests", "*.zip", "package-lock.json"];
+// Each Lambda's source lives under its own src/ folder. The code is plain ESM (.mjs)
+// whose only runtime dependency is @aws-sdk/*, which the Node 24 runtime already
+// provides — so we ship the src/ folder as-is with no bundling step.
+const lambdaSrc = (projectDir: string) => path.join(projectDir, "src");
 
 export class VanityCdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -56,13 +56,12 @@ export class VanityCdkStack extends cdk.Stack {
     });
 
     // ── VanityNumberConverter Lambda ─────────────────────────────────────────
-    // Source lives at repo root in vanity-lambda/ as flat ESM modules
-    // (index.mjs + vanity-generator.mjs + words.mjs), shipped as-is.
+    // Source in vanity-lambda/src/ (index.mjs + vanity-generator.mjs + words.mjs).
     const converterLambda = new lambda.Function(this, "VanityNumberConverter", {
       functionName: "VanityNumberConverter",
       runtime: lambda.Runtime.NODEJS_24_X,
       handler: "index.handler",
-      code: lambda.Code.fromAsset(CONVERTER_DIR, { exclude: LAMBDA_ASSET_EXCLUDE }),
+      code: lambda.Code.fromAsset(lambdaSrc(CONVERTER_DIR)),
       memorySize: 256,
       timeout: cdk.Duration.seconds(10),
       environment: {
@@ -80,7 +79,7 @@ export class VanityCdkStack extends cdk.Stack {
       functionName: "VanityDashboardReader",
       runtime: lambda.Runtime.NODEJS_24_X,
       handler: "index.handler",
-      code: lambda.Code.fromAsset(READER_DIR, { exclude: LAMBDA_ASSET_EXCLUDE }),
+      code: lambda.Code.fromAsset(lambdaSrc(READER_DIR)),
       memorySize: 128,
       timeout: cdk.Duration.seconds(10),
       environment: {
@@ -116,7 +115,7 @@ export class VanityCdkStack extends cdk.Stack {
       functionName: "SloganGenerator",
       runtime: lambda.Runtime.NODEJS_24_X,
       handler: "index.handler",
-      code: lambda.Code.fromAsset(SLOGAN_DIR, { exclude: LAMBDA_ASSET_EXCLUDE }),
+      code: lambda.Code.fromAsset(lambdaSrc(SLOGAN_DIR)),
       memorySize: 256,
       timeout: cdk.Duration.seconds(10), // calls an external API; flow allows up to 8s
       environment: {

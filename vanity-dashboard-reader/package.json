@@ -2,6 +2,7 @@
   "name": "vanity-dashboard-reader",
   "version": "1.0.0",
   "type": "module",
+  "main": "src/index.mjs",
   "scripts": {
     "test": "node --test"
   },

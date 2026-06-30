@@ -25,7 +25,7 @@ const FALLBACKS = [
 // so each test imports a fresh instance via a cache-busting query string.
 let importCounter = 0;
 const loadHandler = async () =>
-  (await import(`../index.mjs?n=${importCounter++}`)).handler;
+  (await import(`../src/index.mjs?n=${importCounter++}`)).handler;
 
 const connectEvent = (vanityNumber) => ({ Details: { Parameters: { vanityNumber } } });
 const SECRET_OK = { SecretString: JSON.stringify({ ANTHROPIC_API_KEY: "sk-test-123" }) };

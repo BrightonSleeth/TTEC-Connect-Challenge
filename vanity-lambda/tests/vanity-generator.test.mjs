@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { generateVanities } from "../vanity-generator.mjs";
+import { generateVanities } from "../src/vanity-generator.mjs";
 
 // 1-800-356-9377 spells 1-800-FLOWERS
 const FLOWERS = "+18003569377";

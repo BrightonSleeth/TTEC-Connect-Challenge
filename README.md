@@ -13,12 +13,12 @@
 ### CDK
 - Navigate to vanity-cdk folder and read instructions provided there.
 
-# Highlights
+# Feature Highlights
 - Automatic vanity number generator for new and repeat callers powered by Connect, Lambda, and DynamoDB.
 - GSI Indexed by last call Dynamo table for fast lookups.
 - Dashboard for viewing the most recent callers and their vanity numbers.
-- Deploy-ready automated CDK containing all architecture and code. (Does NOT include Connect instance ARN; needs manual input)
-- Fun optional slogan generator for your best fitting number.
+- Turn-key Deploy-ready automated CDK containing all architecture and code. (Only requires connect Arn param)
+- Slogan generator using Anthropic API to generate an optional marketing slogan for your vanity number!
 
 # Design and Decisions
 

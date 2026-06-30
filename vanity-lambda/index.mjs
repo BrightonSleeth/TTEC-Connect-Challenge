@@ -16,6 +16,11 @@ import { generateVanities } from "./vanity-generator.mjs";
 // eslint-disable-next-line no-undef
 const TABLE_NAME = process.env.TABLE_NAME;
 
+//constant GSI partition value: every record shares it so the dashboard can Query
+//the LastCalledIndex (sorted by LastCalled) instead of scanning the whole table.
+const GSI_PARTITION_ATTR = "GSIPartition";
+const GSI_PARTITION_VALUE = "ALL";
+
 //dynamo client instance
 const ddbClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(ddbClient, {
@@ -74,21 +79,30 @@ export const handler = async (event) => {
           await docClient.send(
             new PutCommand({
               TableName: TABLE_NAME,
-              Item: { CallerId: rawNumber, LastCalled: new Date().toISOString(), VanityResults: stored },
+              Item: {
+                CallerId: rawNumber,
+                LastCalled: new Date().toISOString(),
+                VanityResults: stored,
+                [GSI_PARTITION_ATTR]: GSI_PARTITION_VALUE,
+              },
             })
           );
         } catch (err) {
           console.error("Failed to backfill cached record:", err.message);
         }
       } else {
-        //fresh enough — just refresh the timestamp of this call log.
+        //fresh enough — refresh the timestamp of this call log. Also (re)set the GSI
+        //partition so the record is present in LastCalledIndex even if it predates it.
         try {
           await docClient.send(
             new UpdateCommand({
               TableName: TABLE_NAME,
               Key: { CallerId: rawNumber },
-              UpdateExpression: "SET LastCalled = :now",
-              ExpressionAttributeValues: { ":now": new Date().toISOString() },
+              UpdateExpression: `SET LastCalled = :now, ${GSI_PARTITION_ATTR} = :gsi`,
+              ExpressionAttributeValues: {
+                ":now": new Date().toISOString(),
+                ":gsi": GSI_PARTITION_VALUE,
+              },
             })
           );
         } catch (err) {
@@ -124,6 +138,7 @@ export const handler = async (event) => {
     CallerId: rawNumber,
     LastCalled: calledAt,
     VanityResults: parsed,
+    [GSI_PARTITION_ATTR]: GSI_PARTITION_VALUE, // groups records into the LastCalledIndex GSI
   };
 
   //attempt to write to db - non fatal fail

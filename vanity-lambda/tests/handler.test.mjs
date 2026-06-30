@@ -75,6 +75,7 @@ test("new caller: generates, stores a timestamped record, returns top 3", async 
   // each stored result carries a TTS-friendly rendering for the contact flow
   assert.equal(item.VanityResults[0].tts, "one, eight zero zero, flowers");
   assert.match(item.LastCalled, /^\d{4}-\d{2}-\d{2}T/); // ISO timestamp
+  assert.equal(item.GSIPartition, "ALL"); // groups the record into the LastCalledIndex GSI
   // write is guarded so concurrent callers can't clobber each other
   assert.equal(
     puts[0].args[0].input.ConditionExpression,

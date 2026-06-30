@@ -18,17 +18,51 @@ test("creates the VanityNumbers DynamoDB table", () => {
   });
 });
 
-test("creates both Lambda functions on Node 20", () => {
+test("table has the LastCalledIndex GSI (GSIPartition + LastCalled)", () => {
+  template.hasResourceProperties("AWS::DynamoDB::Table", {
+    GlobalSecondaryIndexes: Match.arrayWith([
+      Match.objectLike({
+        IndexName: "LastCalledIndex",
+        KeySchema: [
+          { AttributeName: "GSIPartition", KeyType: "HASH" },
+          { AttributeName: "LastCalled", KeyType: "RANGE" },
+        ],
+        Projection: { ProjectionType: "INCLUDE", NonKeyAttributes: ["VanityResults"] },
+      }),
+    ]),
+  });
+});
+
+test("creates the three app Lambda functions on Node 24", () => {
   // exact count is left unasserted: BucketDeployment + S3 auto-delete add helper Lambdas.
   template.hasResourceProperties("AWS::Lambda::Function", {
     FunctionName: "VanityNumberConverter",
-    Runtime: "nodejs20.x",
+    Runtime: "nodejs24.x",
     Environment: { Variables: Match.objectLike({ TABLE_NAME: Match.anyValue() }) },
   });
   template.hasResourceProperties("AWS::Lambda::Function", {
     FunctionName: "VanityDashboardReader",
-    Runtime: "nodejs20.x",
+    Runtime: "nodejs24.x",
     Environment: { Variables: Match.objectLike({ VANITY_TABLE: Match.anyValue() }) },
+  });
+  template.hasResourceProperties("AWS::Lambda::Function", {
+    FunctionName: "SloganGenerator",
+    Runtime: "nodejs24.x",
+    Environment: { Variables: Match.objectLike({ SECRET_NAME: Match.anyValue() }) },
+  });
+});
+
+test("creates the Anthropic API key secret and grants the slogan Lambda read", () => {
+  template.hasResourceProperties("AWS::SecretsManager::Secret", {
+    Name: "vanity-generator/anthropic-api-key",
+  });
+  // a policy grants secretsmanager:GetSecretValue (scoped to the slogan Lambda role)
+  template.hasResourceProperties("AWS::IAM::Policy", {
+    PolicyDocument: {
+      Statement: Match.arrayWith([
+        Match.objectLike({ Action: Match.arrayWith(["secretsmanager:GetSecretValue"]) }),
+      ]),
+    },
   });
 });
 

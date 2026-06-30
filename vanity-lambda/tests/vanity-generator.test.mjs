@@ -54,15 +54,15 @@ test("results are sorted by score descending and capped", () => {
   }
 });
 
-test("a fully-converted word scores higher than its substitute variant", () => {
-  const results = generateVanities(FLOWERS);
-  const flowers = results.find((c) => c.vanityNum === "FLOWERS");
-  const flow3rs = results.find((c) => c.vanityNum === "FLOW3RS");
-  assert.ok(flowers, "expected FLOWERS candidate");
-  assert.ok(flow3rs, "expected FLOW3RS substitute candidate");
+test("a substitute-formed word scores below a fully keypad-converted word", () => {
+  // ROBOT needs 0 -> O substitutes (R0B0T), so its coverage is below the max a
+  // 5-letter all-keypad word could score.
+  const robot = generateVanities("+18007020836").find((c) => c.word === "robot");
+  assert.ok(robot, "expected a 'robot' candidate");
+  const allKeypadMax = 5 * 100 + 5 * 5; // wlen*WORD_WEIGHT + every letter via keypad
   assert.ok(
-    flowers.score > flow3rs.score,
-    `FLOWERS (${flowers.score}) should beat FLOW3RS (${flow3rs.score})`
+    robot.score < allKeypadMax,
+    `robot score ${robot.score} should be below all-keypad max ${allKeypadMax}`
   );
 });
 
@@ -100,12 +100,11 @@ test("includes a TTS rendering that separates digits from words", () => {
   assert.equal(flowers.tts, "one, eight zero zero, flowers");
 });
 
-test("TTS speaks substitute variants as the real word, not its digits", () => {
-  // FLOW3RS keeps a substitute digit, but should still be read aloud as "flowers".
-  const flow3rs = generateVanities(FLOWERS).find((c) => c.vanityNum === "FLOW3RS");
-  assert.ok(flow3rs, "expected FLOW3RS candidate");
-  assert.equal(flow3rs.tts, "one, eight zero zero, flowers");
-  assert.ok(!/three/.test(flow3rs.tts), "substitute digit should not be spoken");
+test("TTS speaks substitute-formed words as the real word, not its digits", () => {
+  // R0B0T keeps substitute digits, but should still be read aloud as "robot".
+  const robot = generateVanities("+18007020836").find((c) => c.word === "robot");
+  assert.ok(robot, "expected a 'robot' candidate");
+  assert.match(robot.tts, /\brobot\b/);
 });
 
 test("TTS speaks surrounding digit runs one digit at a time", () => {

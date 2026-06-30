@@ -9,18 +9,23 @@ import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as connect from "aws-cdk-lib/aws-connect";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as path from "path";
 import * as fs from "fs";
-import * as os from "os";
 
 // Repo root, relative to this file (vanity-cdk/lib).
 const REPO_ROOT = path.join(__dirname, "..", "..");
 const CONVERTER_DIR = path.join(REPO_ROOT, "vanity-lambda");
 const READER_DIR = path.join(REPO_ROOT, "vanity-dashboard-reader");
+const SLOGAN_DIR = path.join(REPO_ROOT, "vanity-slogan-generator");
 const DASHBOARD_DIR = path.join(REPO_ROOT, "vanity-dashboard");
 
+// Secrets Manager name holding the Anthropic API key for the slogan Lambda,
+// shaped as { "ANTHROPIC_API_KEY": "sk-ant-..." }.
+const API_KEY_SECRET_NAME = "vanity-generator/anthropic-api-key";
+
 // The Lambdas are plain ESM (.mjs) whose only runtime dependency is @aws-sdk/*,
-// which the Node 20 runtime already provides — so we ship the source as-is with
+// which the Node 24 runtime already provides — so we ship the source as-is with
 // no bundling step. These are the files we DON'T want in the deployment package.
 const LAMBDA_ASSET_EXCLUDE = ["node_modules", "tests", "*.zip", "package-lock.json"];
 
@@ -38,12 +43,24 @@ export class VanityCdkStack extends cdk.Stack {
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
     });
 
+    // GSI for the dashboard: every caller record carries a constant GSIPartition="ALL",
+    // so all records share one partition sorted by LastCalled. The reader can then Query
+    // this index (newest first, Limit 5) instead of Scanning the whole table. Only
+    // VanityResults is projected; CallerId (table key) and LastCalled (sort key) come for free.
+    table.addGlobalSecondaryIndex({
+      indexName: "LastCalledIndex",
+      partitionKey: { name: "GSIPartition", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "LastCalled", type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.INCLUDE,
+      nonKeyAttributes: ["VanityResults"],
+    });
+
     // ── VanityNumberConverter Lambda ─────────────────────────────────────────
     // Source lives at repo root in vanity-lambda/ as flat ESM modules
     // (index.mjs + vanity-generator.mjs + words.mjs), shipped as-is.
     const converterLambda = new lambda.Function(this, "VanityNumberConverter", {
       functionName: "VanityNumberConverter",
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       handler: "index.handler",
       code: lambda.Code.fromAsset(CONVERTER_DIR, { exclude: LAMBDA_ASSET_EXCLUDE }),
       memorySize: 256,
@@ -61,7 +78,7 @@ export class VanityCdkStack extends cdk.Stack {
     // ── VanityDashboardReader Lambda ─────────────────────────────────────────
     const readerLambda = new lambda.Function(this, "VanityDashboardReader", {
       functionName: "VanityDashboardReader",
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       handler: "index.handler",
       code: lambda.Code.fromAsset(READER_DIR, { exclude: LAMBDA_ASSET_EXCLUDE }),
       memorySize: 128,
@@ -74,6 +91,42 @@ export class VanityCdkStack extends cdk.Stack {
 
     // Grant reader scan-only access
     table.grantReadData(readerLambda);
+
+    // ── Anthropic API key secret ─────────────────────────────────────────────
+    // Created with a generated placeholder so `cdk deploy` is self-contained for a
+    // reviewer's own account. Replace the value with a real key after deploy:
+    //   aws secretsmanager put-secret-value --secret-id vanity-generator/anthropic-api-key \
+    //     --secret-string '{"ANTHROPIC_API_KEY":"sk-ant-..."}'
+    // Until then the slogan Lambda falls back to canned slogans (never goes silent).
+    const apiKeySecret = new secretsmanager.Secret(this, "AnthropicApiKey", {
+      secretName: API_KEY_SECRET_NAME,
+      description: "Anthropic API key for the SloganGenerator Lambda. Replace the placeholder value with a real key.",
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({}),
+        generateStringKey: "ANTHROPIC_API_KEY", // produces { "ANTHROPIC_API_KEY": "<placeholder>" }
+      },
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // just a placeholder; fine to remove with the stack
+    });
+
+    // ── SloganGenerator Lambda ───────────────────────────────────────────────
+    // Invoked mid-call (press 0) to generate a marketing slogan for the caller's
+    // top vanity number via the Anthropic API. Source at repo root in
+    // vanity-slogan-generator/ as flat ESM (@aws-sdk/* provided by the runtime).
+    const sloganLambda = new lambda.Function(this, "SloganGenerator", {
+      functionName: "SloganGenerator",
+      runtime: lambda.Runtime.NODEJS_24_X,
+      handler: "index.handler",
+      code: lambda.Code.fromAsset(SLOGAN_DIR, { exclude: LAMBDA_ASSET_EXCLUDE }),
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(10), // calls an external API; flow allows up to 8s
+      environment: {
+        SECRET_NAME: apiKeySecret.secretName,
+      },
+      description: "Generates a marketing slogan for a vanity number via the Anthropic API.",
+    });
+
+    // Grant the slogan Lambda read access to the API key secret only.
+    apiKeySecret.grantRead(sloganLambda);
 
     // ── HTTP API Gateway ──────────────────────────────────────────────────────
     const api = new apigateway.HttpApi(this, "VanityDashboardAPI", {
@@ -139,20 +192,19 @@ export class VanityCdkStack extends cdk.Stack {
     });
 
     // ── Inject API URL into index.html and upload to S3 ──────────────────────
-    // Read the template, point API_URL at the CloudFront /callers path, write to
-    // a temp dir, then deploy that to S3. Writing to the OS temp dir keeps the
-    // source tree clean.
+    // Point the dashboard's API_URL at the CloudFront /callers path. The domain is
+    // only known at deploy time, so the rewritten HTML is fed through
+    // s3deploy.Source.data, which resolves the CloudFront-domain token at DEPLOY
+    // time. (Writing the token to a file at synth time would bake in an unresolved
+    // "${Token[...]}" placeholder and break the dashboard.)
     const htmlTemplate = fs.readFileSync(path.join(DASHBOARD_DIR, "index.html"), "utf-8");
     const htmlWithUrl = htmlTemplate.replace(
       /const API_URL\s*=\s*["'].*?["'];/,
-      `const API_URL = "https://${distribution.distributionDomainName}/callers";`
+      () => `const API_URL = "https://${distribution.distributionDomainName}/callers";`
     );
 
-    const processedDir = fs.mkdtempSync(path.join(os.tmpdir(), "vanity-dashboard-"));
-    fs.writeFileSync(path.join(processedDir, "index.html"), htmlWithUrl);
-
     new s3deploy.BucketDeployment(this, "DashboardDeployment", {
-      sources: [s3deploy.Source.asset(processedDir)],
+      sources: [s3deploy.Source.data("index.html", htmlWithUrl)],
       destinationBucket: dashboardBucket,
       distribution,
       distributionPaths: ["/*"], // invalidate CloudFront cache on deploy
@@ -184,30 +236,40 @@ export class VanityCdkStack extends cdk.Stack {
     });
     connectPermission.cfnOptions.condition = connectArnProvided;
 
+    // The flow also invokes the slogan Lambda (press 0), so Connect needs to invoke it too.
+    const sloganConnectPermission = new lambda.CfnPermission(this, "SloganConnectInvokePermission", {
+      action: "lambda:InvokeFunction",
+      functionName: sloganLambda.functionName,
+      principal: "connect.amazonaws.com",
+      sourceArn: connectInstanceArn.valueAsString,
+    });
+    sloganConnectPermission.cfnOptions.condition = connectArnProvided;
+
     // ── Contact flow ──────────────────────────────────────────────────────────
-    // Imports "Vanity Number Flow.json" from the repo root. The exported flow has a
-    // hard-coded Lambda ARN, so we swap it for THIS stack's converter ARN. Created
-    // only when an instance ARN is supplied (same condition as the invoke permission).
+    // Imports "Vanity Number Flow.json" from this folder. The exported flow has
+    // hard-coded Lambda ARNs, so we swap each for THIS stack's ARN. Created only
+    // when an instance ARN is supplied (same condition as the invoke permissions).
     const flowJson = fs.readFileSync(
       path.join(__dirname, "..", "Vanity Number Flow.json"),
       "utf-8"
     );
-    const flowContent = flowJson.replace(
-      // any "arn:aws:lambda:...:function:VanityNumberConverter" -> this stack's ARN
-      /arn:aws:lambda:[^"]*:function:VanityNumberConverter/g,
-      () => converterLambda.functionArn
-    );
+    const flowContent = flowJson
+      // "arn:aws:lambda:...:function:VanityNumberConverter" -> this stack's converter ARN
+      .replace(/arn:aws:lambda:[^"]*:function:VanityNumberConverter/g, () => converterLambda.functionArn)
+      // "arn:aws:lambda:...:function:SloganGenerator" -> this stack's slogan ARN
+      .replace(/arn:aws:lambda:[^"]*:function:SloganGenerator/g, () => sloganLambda.functionArn);
 
     const contactFlow = new connect.CfnContactFlow(this, "VanityNumberFlow", {
       instanceArn: connectInstanceArn.valueAsString,
       name: "Vanity Number Flow",
       type: "CONTACT_FLOW",
-      description: "Reads caller's vanity numbers via the VanityNumberConverter Lambda.",
+      description: "Reads caller's vanity numbers (VanityNumberConverter) and offers a slogan (SloganGenerator).",
       content: flowContent,
     });
     contactFlow.cfnOptions.condition = connectArnProvided;
-    // Ensure Connect can invoke the Lambda before the flow references it.
+    // Ensure Connect can invoke both Lambdas before the flow references them.
     contactFlow.addDependency(connectPermission);
+    contactFlow.addDependency(sloganConnectPermission);
 
     // ── Stack outputs ─────────────────────────────────────────────────────────
     const flowArnOutput = new cdk.CfnOutput(this, "ContactFlowArn", {
@@ -230,6 +292,17 @@ export class VanityCdkStack extends cdk.Stack {
     new cdk.CfnOutput(this, "ConverterLambdaName", {
       value: converterLambda.functionName,
       description: "VanityNumberConverter Lambda function name",
+    });
+
+    new cdk.CfnOutput(this, "SloganLambdaArn", {
+      value: sloganLambda.functionArn,
+      description: "SloganGenerator Lambda ARN — invoked by the contact flow on press-0",
+    });
+
+    new cdk.CfnOutput(this, "ApiKeySecretName", {
+      value: apiKeySecret.secretName,
+      description:
+        "Secrets Manager secret for the Anthropic API key — replace its placeholder value with a real key",
     });
 
     new cdk.CfnOutput(this, "DynamoDBTableName", {

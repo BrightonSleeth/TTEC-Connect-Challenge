@@ -5,7 +5,7 @@
 import { test, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { mockClient } from "aws-sdk-client-mock";
-import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 
 console.log = () => {};
 console.error = () => {};
@@ -22,7 +22,7 @@ before(async () => {
 
 beforeEach(() => {
   ddbMock.reset();
-  ddbMock.on(ScanCommand).resolves({ Items: [] });
+  ddbMock.on(QueryCommand).resolves({ Items: [] });
 });
 
 const body = (res) => JSON.parse(res.body);
@@ -43,7 +43,20 @@ test("missing VANITY_TABLE returns 500", async () => {
   process.env.VANITY_TABLE = "reader-test";
 });
 
-test("empty table returns 200 with no callers", async () => {
+test("queries the LastCalledIndex GSI, newest first, limited to 5", async () => {
+  await handler({});
+  const calls = ddbMock.commandCalls(QueryCommand);
+  assert.equal(calls.length, 1);
+  const input = calls[0].args[0].input;
+  assert.equal(input.IndexName, "LastCalledIndex");
+  assert.equal(input.ScanIndexForward, false); // descending by LastCalled
+  assert.equal(input.Limit, 5);
+  // partition key condition resolves to GSIPartition = "ALL"
+  assert.equal(input.ExpressionAttributeNames["#p"], "GSIPartition");
+  assert.equal(input.ExpressionAttributeValues[":all"], "ALL");
+});
+
+test("empty result returns 200 with no callers", async () => {
   const res = await handler({});
   assert.equal(res.statusCode, 200);
   assert.deepEqual(body(res).callers, []);
@@ -52,7 +65,7 @@ test("empty table returns 200 with no callers", async () => {
 });
 
 test("projects object-shaped VanityResults into parallel display/score arrays", async () => {
-  ddbMock.on(ScanCommand).resolves({
+  ddbMock.on(QueryCommand).resolves({
     Items: [
       {
         CallerId: "+18003569377",
@@ -73,27 +86,38 @@ test("projects object-shaped VanityResults into parallel display/score arrays", 
   assert.deepEqual(callers[0].topScores, [735, 731]);
 });
 
-test("uses LastCalled for the timestamp, falling back to CreatedAt for old records", async () => {
-  ddbMock.on(ScanCommand).resolves({
+test("preserves the query's order (no client-side re-sorting)", async () => {
+  // DynamoDB returns these already sorted by LastCalled desc; the reader maps as-is.
+  ddbMock.on(QueryCommand).resolves({
     Items: [
-      // newer record uses LastCalled (written by the current generator)
+      { CallerId: "+1A", LastCalled: "2026-06-27T10:00:00Z", VanityResults: [] },
+      { CallerId: "+1B", LastCalled: "2026-06-26T10:00:00Z", VanityResults: [] },
+    ],
+  });
+
+  const { callers } = body(await handler({}));
+  assert.deepEqual(callers.map((c) => c.callerId), ["+1A", "+1B"]);
+  assert.equal(callers[0].timestamp, "2026-06-27T10:00:00Z");
+});
+
+test("uses LastCalled for the timestamp, falling back to CreatedAt for old records", async () => {
+  ddbMock.on(QueryCommand).resolves({
+    Items: [
       { CallerId: "+1NEW", LastCalled: "2026-06-27T12:00:00Z", VanityResults: [] },
-      // legacy record only has CreatedAt
       { CallerId: "+1OLD", CreatedAt: "2026-06-27T09:00:00Z", VanityResults: [] },
     ],
   });
 
   const { callers } = body(await handler({}));
-  assert.deepEqual(callers.map((c) => c.callerId), ["+1NEW", "+1OLD"]);
   assert.equal(callers[0].timestamp, "2026-06-27T12:00:00Z");
   assert.equal(callers[1].timestamp, "2026-06-27T09:00:00Z"); // CreatedAt fallback
 });
 
 test("tolerates legacy string results and missing fields", async () => {
-  ddbMock.on(ScanCommand).resolves({
+  ddbMock.on(QueryCommand).resolves({
     Items: [
-      { CallerId: "+1A", CreatedAt: "2026-06-27T10:00:00Z", VanityResults: ["1-800-LEGACY"] },
-      { CallerId: "+1B", CreatedAt: "2026-06-26T10:00:00Z" }, // no VanityResults at all
+      { CallerId: "+1A", LastCalled: "2026-06-27T10:00:00Z", VanityResults: ["1-800-LEGACY"] },
+      { CallerId: "+1B", LastCalled: "2026-06-26T10:00:00Z" }, // no VanityResults at all
     ],
   });
 
@@ -106,34 +130,8 @@ test("tolerates legacy string results and missing fields", async () => {
   assert.deepEqual(callers[1].topScores, []);
 });
 
-test("sorts by call time descending and dedupes by CallerId", async () => {
-  ddbMock.on(ScanCommand).resolves({
-    Items: [
-      { CallerId: "+1A", LastCalled: "2026-06-25T10:00:00Z", VanityResults: [] }, // older dup
-      { CallerId: "+1A", LastCalled: "2026-06-27T10:00:00Z", VanityResults: [] }, // newest A
-      { CallerId: "+1B", LastCalled: "2026-06-26T10:00:00Z", VanityResults: [] },
-    ],
-  });
-
-  const { callers } = body(await handler({}));
-  assert.deepEqual(callers.map((c) => c.callerId), ["+1A", "+1B"]);
-  assert.equal(callers[0].timestamp, "2026-06-27T10:00:00Z"); // newest A kept
-});
-
-test("returns at most 5 callers", async () => {
-  const Items = Array.from({ length: 8 }, (_, i) => ({
-    CallerId: `+1${i}`,
-    LastCalled: `2026-06-${10 + i}T10:00:00Z`,
-    VanityResults: [],
-  }));
-  ddbMock.on(ScanCommand).resolves({ Items });
-
-  const { callers } = body(await handler({}));
-  assert.equal(callers.length, 5);
-});
-
-test("a failed scan returns 502", async () => {
-  ddbMock.on(ScanCommand).rejects(new Error("scan boom"));
+test("a failed query returns 502", async () => {
+  ddbMock.on(QueryCommand).rejects(new Error("query boom"));
   const res = await handler({});
   assert.equal(res.statusCode, 502);
   assert.equal(body(res).error, "Failed to fetch callers from database.");

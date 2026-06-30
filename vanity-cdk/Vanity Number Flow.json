@@ -7,22 +7,10 @@
       "y": 42.4
     },
     "ActionMetadata": {
-      "7ac9f357-2cd4-4aef-993b-4e8a02450279": {
-        "position": {
-          "x": 816,
-          "y": -41.6
-        }
-      },
       "cdb8a759-fd08-4327-b1c6-ea32b1d2d20f": {
         "position": {
           "x": -92.8,
           "y": 41.6
-        }
-      },
-      "0123b8c3-fa1b-4355-b0fc-cb8994e919dc": {
-        "position": {
-          "x": 1100.8,
-          "y": 116.8
         }
       },
       "vanity-generator": {
@@ -38,10 +26,66 @@
         },
         "dynamicMetadata": {}
       },
+      "7ac9f357-2cd4-4aef-993b-4e8a02450279": {
+        "position": {
+          "x": 406.4,
+          "y": 5.6
+        }
+      },
+      "0123b8c3-fa1b-4355-b0fc-cb8994e919dc": {
+        "position": {
+          "x": 1729.6,
+          "y": 87.2
+        }
+      },
+      "adf5e408-b5df-4414-b104-3c0e18caa416": {
+        "position": {
+          "x": 720,
+          "y": -4
+        },
+        "conditionMetadata": [
+          {
+            "id": "8ec94dbc-f9bb-49c3-8c2d-c1b748321faa",
+            "value": "0"
+          },
+          {
+            "id": "bf4e3645-638f-42e5-a4f3-0cb324118977",
+            "value": "1"
+          }
+        ]
+      },
       "error": {
         "position": {
-          "x": 816.8,
-          "y": 173.6
+          "x": 1216.8,
+          "y": 252.8
+        },
+        "isFriendlyName": true
+      },
+      "12dae66a-dda9-4785-aec0-d0e22ac7c52e": {
+        "position": {
+          "x": 1470.4,
+          "y": 43.2
+        }
+      },
+      "Slogan Generator": {
+        "position": {
+          "x": 962.4,
+          "y": -58.4
+        },
+        "isFriendlyName": true,
+        "parameters": {
+          "LambdaFunctionARN": {
+            "displayName": "SloganGenerator"
+          }
+        },
+        "dynamicMetadata": {
+          "vanityNumber": false
+        }
+      },
+      "Slogan TTS": {
+        "position": {
+          "x": 1216.8,
+          "y": -8.8
         },
         "isFriendlyName": true
       }
@@ -50,27 +94,10 @@
     "name": "Vanity Number Flow",
     "description": "",
     "type": "contactFlow",
-    "status": "PUBLISHED",
+    "status": "published",
     "hash": {}
   },
   "Actions": [
-    {
-      "Parameters": {
-        "SkipWhenDTMFBufferEnabled": "false",
-        "SSML": "<speak>\n  $.External.greeting\n  <break time=\"600ms\"/>\n  Number one. <break time=\"300ms\"/> $.External.vanity1tts.\n  <break time=\"700ms\"/>\n  Number two. <break time=\"300ms\"/> $.External.vanity2tts.\n  <break time=\"700ms\"/>\n  Number three. <break time=\"300ms\"/> $.External.vanity3tts.\n</speak>"
-      },
-      "Identifier": "7ac9f357-2cd4-4aef-993b-4e8a02450279",
-      "Type": "MessageParticipant",
-      "Transitions": {
-        "NextAction": "0123b8c3-fa1b-4355-b0fc-cb8994e919dc",
-        "Errors": [
-          {
-            "NextAction": "0123b8c3-fa1b-4355-b0fc-cb8994e919dc",
-            "ErrorType": "NoMatchingError"
-          }
-        ]
-      }
-    },
     {
       "Parameters": {
         "FlowLoggingBehavior": "Enabled"
@@ -80,12 +107,6 @@
       "Transitions": {
         "NextAction": "vanity-generator"
       }
-    },
-    {
-      "Parameters": {},
-      "Identifier": "0123b8c3-fa1b-4355-b0fc-cb8994e919dc",
-      "Type": "DisconnectParticipant",
-      "Transitions": {}
     },
     {
       "Parameters": {
@@ -111,15 +132,142 @@
     {
       "Parameters": {
         "SkipWhenDTMFBufferEnabled": "false",
+        "SSML": "<speak>\n  $.External.greeting\n  <break time=\"600ms\"/>\n  Number one. <break time=\"300ms\"/> $.External.vanity1tts.\n  <break time=\"700ms\"/>\n  Number two. <break time=\"300ms\"/> $.External.vanity2tts.\n  <break time=\"700ms\"/>\n  Number three. <break time=\"300ms\"/> $.External.vanity3tts.\n</speak>"
+      },
+      "Identifier": "7ac9f357-2cd4-4aef-993b-4e8a02450279",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "adf5e408-b5df-4414-b104-3c0e18caa416",
+        "Errors": [
+          {
+            "NextAction": "error",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "0123b8c3-fa1b-4355-b0fc-cb8994e919dc",
+      "Type": "DisconnectParticipant",
+      "Transitions": {}
+    },
+    {
+      "Parameters": {
+        "StoreInput": "False",
+        "InputTimeLimitSeconds": "5",
+        "Text": "Press 0 for a marketing slogan, or 1 to skip."
+      },
+      "Identifier": "adf5e408-b5df-4414-b104-3c0e18caa416",
+      "Type": "GetParticipantInput",
+      "Transitions": {
+        "NextAction": "error",
+        "Conditions": [
+          {
+            "NextAction": "Slogan Generator",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "0"
+              ]
+            }
+          },
+          {
+            "NextAction": "12dae66a-dda9-4785-aec0-d0e22ac7c52e",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": [
+                "1"
+              ]
+            }
+          }
+        ],
+        "Errors": [
+          {
+            "NextAction": "error",
+            "ErrorType": "InputTimeLimitExceeded"
+          },
+          {
+            "NextAction": "error",
+            "ErrorType": "NoMatchingCondition"
+          },
+          {
+            "NextAction": "error",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
         "Text": "We were unable to generate vanities for your number. Please try again later."
       },
       "Identifier": "error",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "12dae66a-dda9-4785-aec0-d0e22ac7c52e",
+        "Errors": [
+          {
+            "NextAction": "12dae66a-dda9-4785-aec0-d0e22ac7c52e",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Goodbye."
+      },
+      "Identifier": "12dae66a-dda9-4785-aec0-d0e22ac7c52e",
       "Type": "MessageParticipant",
       "Transitions": {
         "NextAction": "0123b8c3-fa1b-4355-b0fc-cb8994e919dc",
         "Errors": [
           {
             "NextAction": "0123b8c3-fa1b-4355-b0fc-cb8994e919dc",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "LambdaFunctionARN": "arn:aws:lambda:us-east-1:141960793304:function:SloganGenerator",
+        "InvocationTimeLimitSeconds": "8",
+        "InvocationType": "SYNCHRONOUS",
+        "LambdaInvocationAttributes": {
+          "vanityNumber": "$.External.vanity1"
+        },
+        "ResponseValidation": {
+          "ResponseType": "STRING_MAP"
+        }
+      },
+      "Identifier": "Slogan Generator",
+      "Type": "InvokeLambdaFunction",
+      "Transitions": {
+        "NextAction": "Slogan TTS",
+        "Errors": [
+          {
+            "NextAction": "error",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Here's a slogan for your number: $.External.slogan"
+      },
+      "Identifier": "Slogan TTS",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "12dae66a-dda9-4785-aec0-d0e22ac7c52e",
+        "Errors": [
+          {
+            "NextAction": "12dae66a-dda9-4785-aec0-d0e22ac7c52e",
             "ErrorType": "NoMatchingError"
           }
         ]

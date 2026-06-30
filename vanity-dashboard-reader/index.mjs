@@ -1,5 +1,5 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 
 //dynamo client instance
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -10,6 +10,13 @@ const TABLE   = process.env.VANITY_TABLE;
 // eslint-disable-next-line no-undef
 const ORIGIN  = process.env.ALLOWED_ORIGIN ?? "*";
 
+//GSI written by the generator: every record carries GSIPartition="ALL" and is sorted
+//by LastCalled, so we can Query the most-recent callers instead of scanning the table.
+const INDEX_NAME = "LastCalledIndex";
+const GSI_PARTITION_ATTR = "GSIPartition";
+const GSI_PARTITION_VALUE = "ALL";
+const MAX_CALLERS = 5;
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin":  ORIGIN,
   "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -18,7 +25,7 @@ const CORS_HEADERS = {
 
 //Flattens the stored VanityResults into parallel arrays for the dashboard:
 //a display string per result and a matching score. Tolerates the legacy shape
-//(plain display strings) and any missing fields so a bad record can't break the scan.
+//(plain display strings) and any missing fields so a bad record can't break the query.
 function projectVanities(results) {
   const vanityResults = [];
   const topScores = [];
@@ -55,36 +62,36 @@ export const handler = async (event) => {
   }
 
   try {
-    //scan db for data on table
-    const result = await ddb.send(new ScanCommand({ TableName: TABLE }));
-    //store items from result or a new array
+    //Query the GSI for the most-recent callers (newest first). Because CallerId is the
+    //table's sole key there is one record per caller, so no de-duplication is needed —
+    //the index already gives unique callers ordered by LastCalled.
+    const result = await ddb.send(
+      new QueryCommand({
+        TableName: TABLE,
+        IndexName: INDEX_NAME,
+        KeyConditionExpression: "#p = :all",
+        ExpressionAttributeNames: { "#p": GSI_PARTITION_ATTR },
+        ExpressionAttributeValues: { ":all": GSI_PARTITION_VALUE },
+        ScanIndexForward: false, // descending by LastCalled (most recent first)
+        Limit: MAX_CALLERS,
+      })
+    );
     const items = result.Items ?? [];
 
-    //sort decending by call time, filter out seen, limit size to 5, and finally map data.
-    //the generator stores the call time as LastCalled; CreatedAt/Timestamp are
-    //fallbacks for any older records written before that field existed.
+    //LastCalled is the GSI sort key, so it's always present; CreatedAt/Timestamp remain
+    //as fallbacks for any older records.
     const callTime = (item) => item.LastCalled ?? item.CreatedAt ?? item.Timestamp ?? "";
-    const seen = new Set();
-    const recent = items
-      .sort((a, b) => callTime(b).localeCompare(callTime(a)))
-      .filter((item) => {
-        if (seen.has(item.CallerId)) return false;
-        seen.add(item.CallerId);
-        return true;
-      })
-      .slice(0, 5)
-      .map((item) => {
-        //VanityResults is now an array of candidate objects
-        //({ vanityNum, formatted, word, score }) written by the generator lambda.
-        //Flatten it into the parallel display/score arrays the dashboard consumes.
-        const { vanityResults, topScores } = projectVanities(item.VanityResults);
-        return {
-          callerId:      item.CallerId,
-          timestamp:     callTime(item),
-          vanityResults,
-          topScores,
-        };
-      });
+    const recent = items.map((item) => {
+      //VanityResults is an array of candidate objects ({ vanityNum, formatted, word, score });
+      //flatten it into the parallel display/score arrays the dashboard consumes.
+      const { vanityResults, topScores } = projectVanities(item.VanityResults);
+      return {
+        callerId:  item.CallerId,
+        timestamp: callTime(item),
+        vanityResults,
+        topScores,
+      };
+    });
     //return success
     return {
       statusCode: 200,
@@ -96,7 +103,7 @@ export const handler = async (event) => {
       body: JSON.stringify({ callers: recent }),
     };
   } catch (err) {
-    console.error("DynamoDB scan failed:", err.message);
+    console.error("DynamoDB query failed:", err.message);
     return {
       statusCode: 502,
       headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
